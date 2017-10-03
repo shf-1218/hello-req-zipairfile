@@ -19,20 +19,21 @@
 	<c:set var="base_path" value="${ctx_path }/${page }"></c:set>
 
 
-	<!-- begin -->
+	<%-- <!-- begin -->
 	<div class="intf">
 	<span class="intf_desc">testjson</span><!-- 修改 -->
-	<c:set var="action_path" value="${base_path }/download1"></c:set><!-- 修改 -->
+	<c:set var="action_path" value="${base_path }/downloadfile"></c:set><!-- 修改 -->
 	<span class="ap">${action_path }</span>
 	<form action="${action_path }" method="post"><!-- 修改 -->
 		<!-- pageSize<input name="pageSize" value="10"><br> -->
 		<input type="submit">
 	</form>
 	</div>
-	<!-- end -->
+	<!-- end --> --%>
 
 	
-	<a href="<%=request.getContextPath()%>/download/download1">download1</a>
+	<a href="<%=request.getContextPath()%>/download/downloadfile">下载文件</a><br>
+	<a href="<%=request.getContextPath()%>/download/downloadairzip">下载空中zip包</a><br>
 	
 	
 	<script type="text/javascript">

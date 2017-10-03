@@ -2,9 +2,9 @@ package com.wyf.test.onlyspringmvc.common.util;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
@@ -13,88 +13,49 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
-import org.apache.commons.io.IOUtils;
-
 /**
- * 通过Java的Zip输入输出流实现压缩和解压文件
+ * 通过Java的Zip输入输出流实现压缩和解压文件<br>
+ * 
+ * 注意：ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream("D:/abc.zip")));这句立即就会产生一个zip文件
  * 
  * @author liujiduo
  * 
  */
 public final class ZipUtil {
-
 	/**
-	 * 压缩文件
+	 * 打包成zip
 	 * 
-	 * @param filePath
-	 *            待压缩的文件路径
-	 * @return 压缩后的文件
+	 * @param fileList
+	 *            文件或目录列表，如果是目录会递归打包
+	 * @param zipPath
+	 *            zip包生成路径。完整路径名，包括文件名和扩展名
+	 * @return 返回zip文件，可以getAbsolutePath()获取到详细路径，或进一步获取到文件流
+	 * @author Stone
 	 */
-	public static File zip(String filePath) {
-		File target = null;
-		File source = new File(filePath);
-		if (source.exists()) {
-			// 压缩文件名=源文件名.zip
-			String zipName = source.getName() + ".zip";
-			target = new File(source.getParent(), zipName);
-			if (target.exists()) {
-				target.delete(); // 删除旧的文件
-			}
-			FileOutputStream fos = null;
-			ZipOutputStream zos = null;
-			try {
-				fos = new FileOutputStream(target);
-				zos = new ZipOutputStream(new BufferedOutputStream(fos));
-				// 添加对应的文件Entry
-				addEntry("/", source, zos);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			} finally {
-				IOUtils.closeQuietly(zos);
-				IOUtils.closeQuietly(fos);
-			}
-		}
-		return target;
-	}
+	public static File genZipFile(List<File> fileList, String zipPath) {
+		// 检查文件必须都存在
+		checkFileExist(fileList);
 
-	/**
-	 * 扫描添加文件Entry
-	 * 
-	 * @param base
-	 *            基路径
-	 * 
-	 * @param source
-	 *            源文件
-	 * @param zos
-	 *            Zip文件输出流
-	 * @throws IOException
-	 */
-	private static void addEntry(String base, File source, ZipOutputStream zos) throws IOException {
-		// 按目录分级，形如：/aaa/bbb.txt
-		String entry = base + source.getName();
-		if (source.isDirectory()) {
-			for (File file : source.listFiles()) {
-				// 递归列出目录下的所有文件，添加文件Entry
-				addEntry(entry + "/", file, zos);
+		// 目标zip存在则删
+		File zipFile = new File(zipPath);
+		deleteFileIfExists(zipFile);
+
+		// 打包
+		FileOutputStream fos = null;
+		ZipOutputStream zos = null;
+		try {
+			fos = new FileOutputStream(zipFile);
+			zos = new ZipOutputStream(new BufferedOutputStream(fos));
+			// 添加对应的文件Entry
+			for (File file : fileList) {
+				addEntry("", file, zos);
 			}
-		} else {
-			FileInputStream fis = null;
-			BufferedInputStream bis = null;
-			try {
-				byte[] buffer = new byte[1024 * 10];
-				fis = new FileInputStream(source);
-				bis = new BufferedInputStream(fis, buffer.length);
-				int read = 0;
-				zos.putNextEntry(new ZipEntry(entry));
-				while ((read = bis.read(buffer, 0, buffer.length)) != -1) {
-					zos.write(buffer, 0, read);
-				}
-				zos.closeEntry();
-			} finally {
-				IOUtils.closeQuietly(bis);
-				IOUtils.closeQuietly(fis);
-			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		} finally {
+			closeResource(zos, fos);
 		}
+		return new File(zipPath);
 	}
 
 	/**
@@ -130,115 +91,126 @@ public final class ZipUtil {
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			} finally {
-				IOUtils.closeQuietly(zis);
-				IOUtils.closeQuietly(bos);
+				closeResource(zis, bos);
 			}
 		}
 	}
 
 	/**
-	 * 把一系列文件打包成zip
+	 * 扫描添加文件Entry
 	 * 
-	 * @param srcPathList
-	 *            文件列表
-	 * @param zipPath
-	 *            完整路径名，包括文件名和扩展名
-	 * @return 返回File，可以getAbsolutePath()获取到详细路径，或进一步获取到文件流
-	 * @author Stone
+	 * @param base
+	 *            基路径
+	 * 
+	 * @param source
+	 *            源文件
+	 * @param zos
+	 *            Zip文件输出流
+	 * @throws IOException
 	 */
-	public static File zip(List<String> srcPathList, String zipPath) {
-
-		for (String srcPath : srcPathList) {
-			File source = new File(srcPath);
-			if (!source.exists()) {
-				return null;
+	public static void addEntry(String base, File file, ZipOutputStream zos) throws IOException {
+		checkFileExist(file);
+		
+		// 按目录分级，形如：/aaa/bbb.txt
+		String entry = base + file.getName();
+		if (file.isDirectory()) {
+			for (File subFile : file.listFiles()) {
+				// 递归列出目录下的所有文件，添加文件Entry
+				addEntry(entry + "/", subFile, zos);
+			}
+		} else {
+			FileInputStream fis = null;
+			BufferedInputStream bis = null;
+			try {
+				byte[] buffer = new byte[1024 * 10];
+				fis = new FileInputStream(file);
+				bis = new BufferedInputStream(fis, buffer.length);
+				int read = 0;
+				zos.putNextEntry(new ZipEntry(entry));
+				while ((read = bis.read(buffer, 0, buffer.length)) != -1) {
+					zos.write(buffer, 0, read);
+				}
+				zos.closeEntry();
+			} finally {
+				closeResource(bis, fis);
 			}
 		}
+	}
 
-		File target = new File(zipPath);
-		// 压缩文件名=源文件名.zip
-		if (target.exists()) {
-			target.delete(); // 删除旧的文件
-		}
-		FileOutputStream fos = null;
-		ZipOutputStream zos = null;
+	/**
+	 * 往ZipOutputStream里添加文件
+	 * 
+	 * @param fileList
+	 *            文件或目录列表，如果是目录会递归打包
+	 * @param zos
+	 *            ZipOutputStream文件流
+	 * @author Stone
+	 */
+	public static void addEntry(List<File> fileList, ZipOutputStream zos) {
 		try {
-			fos = new FileOutputStream(target);
-			zos = new ZipOutputStream(new BufferedOutputStream(fos));
-			// 添加对应的文件Entry
-			for (String srcPath : srcPathList) {
-				File source = new File(srcPath);
-				addEntry("/", source, zos);
+			for (File file : fileList) {
+				addEntry("", file, zos);
 			}
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		} finally {
-			IOUtils.closeQuietly(zos);
-			IOUtils.closeQuietly(fos);
+			closeResource(zos);
 		}
-		return target;
 	}
 
-//	public static File getZipStream(List<String> srcPathList) {
-//
-//		for (String srcPath : srcPathList) {
-//			File source = new File(srcPath);
-//			if (!source.exists()) {
-//				return null;
-//			}
-//		}
-//
-//		FileOutputStream fos = null;
-//		ZipOutputStream zos = null;
-//		try {
-//			fos = new FileOutputStream(target);
-//			zos = new ZipOutputStream(new BufferedOutputStream(fos));
-//			// 添加对应的文件Entry
-//			for (String string : srcPathList) {
-//
-//			}
-//			for (String srcPath : srcPathList) {
-//				File source = new File(srcPath);
-//				addEntry("/", source, zos);
-//			}
-//		} catch (IOException e) {
-//			throw new RuntimeException(e);
-//		} finally {
-//			IOUtils.closeQuietly(zos);
-//			IOUtils.closeQuietly(fos);
-//		}
-//		return target;
-//	}
+	private static void closeResource(Closeable... closeables) {
+		try {
+			if (closeables != null) {
+				for (Closeable closeable : closeables) {
+					if (closeable != null) {
+						closeable.close();
+					}
+				}
+			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private static void deleteFileIfExists(String zipPath) {
+		File file = new File(zipPath);
+		deleteFileIfExists(file);
+	}
+
+	private static void deleteFileIfExists(File zipPath) {
+		if (zipPath.exists()) {
+			zipPath.delete();
+		}
+	}
+
+	private static void checkFileExist(List<File> fileList) {
+		for (File file : fileList) {
+			checkFileExist(file);
+		}
+	}
+	
+	private static void checkFileExist(File file) {
+		if (!file.exists()) {
+			throw new RuntimeException("file not exist:" + file);
+		}
+	}
 
 	public static void main(String[] args) {
 		// String targetPath = "D:\\旧文档";
 		// File file = ZipUtil.zip(targetPath);
 		// System.out.println(file);
 		// ZipUtil.unzip("F:\\Win7壁纸.zip");
-//		String file1 = "E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_保险.pmml";
-//
-//		List<String> srcPathList = Arrays.asList(//
-//				"E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_保险.pmml", //
-//				"E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_健康.pmml", //
-//				"E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_理财.pmml", //
-//				"E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_心理.pmml", //
-//				"E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_育儿.pmml", //
-//				"E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_职场.pmml"
-//		//
-//		);
-//		String zipPath = "D:/myzip.zip";
-//
-//		File out = zip(srcPathList, zipPath);
-//		System.out.println(out);
-		
-		
-		try {
-			ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream("D:/1.zip")));
-		} catch (FileNotFoundException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		// String file1 = "E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_保险.pmml";
 
+		List<File> fileList = Arrays.asList(//
+				new File("E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_保险.pmml"), //
+				new File("E:/DevFolder/workspaces/ws64bit/java-base-learning/src/main/resources/pmml_model_健康.pmml"), //
+				new File("D:/测试打包") //
+		//
+		);
+		String zipPath = "D:/myzip.zip";
 
+		File out = genZipFile(fileList, zipPath);
+		System.out.println(out);
 	}
 }
