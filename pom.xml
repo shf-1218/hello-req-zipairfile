@@ -149,7 +149,4 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-	<build>
-		<finalName>hello-req-zipairfile</finalName>
-	</build>
 </project>
