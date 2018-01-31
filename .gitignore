@@ -9,3 +9,5 @@ target/
 .externalToolBuilders
 src/main/resources/.gitignore
 account_of_send_email.md
+.idea
+*.iml
